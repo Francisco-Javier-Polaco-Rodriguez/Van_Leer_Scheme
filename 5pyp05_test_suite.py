@@ -59,8 +59,9 @@ class TestHCL():
 
 ##INTEGRATOR VAN LEER
 
-#@jit(nopython = True)
-def Van_Leer_integrator(u0:np.array,dx,dt,flux,a,N):
+
+def Van_Leer_integrator(u0:np.array,dx,dt,flux,a,tFinal,epsilon = 1e-60):
+    N = np.int32(tFinal/dt)
     r = np.zeros((u0.shape[0]))
     eta = np.zeros((u0.shape[0]))
     F_lax = np.zeros((u0.shape[0]))
@@ -68,20 +69,20 @@ def Van_Leer_integrator(u0:np.array,dx,dt,flux,a,N):
 
     u = np.concatenate((u0[:,np.newaxis],np.zeros((u0.shape[0],N))),axis = 1)
     J = len(u0)
-
-    for k in range(1,N):
+    for k in tqdm(range(1,N+1)):
         for j in range(J):
             if j == J-1:
-                r[j] = (u[j,k-1]-u[j-1,k-1])/(u[0,k-1]-u[j,k-1])
-                F_lax[j] = 0.5*(flux(u[0,k-1]) - 2*- flux(u[j,k-1]) + flux(u[j-1,k-1]))   - 0.5*a(u[j,k-1])**2*dx**-1*dt*(u[0,k-1]-2*u[j,k-1]+u[j-1,k-1])
-                F_bea[j] = 0.5*(3*flux(u[j,k-1])-4*flux(u[j-1,k-1])+flux(u[j-2,k-1])) - 0.5*a(u[j,k-1])**2*dx**-1*dt*(u[j,k-1]-2*u[j-1,k-1]+u[j-2,k-1])         
+                r[j] = (u[j,k-1]-u[j-1,k-1])/(u[0,k-1]-u[j,k-1] + epsilon)
+                F_lax[j] = 0.5*(flux(u[0,k-1]) - flux(u[j-1,k-1])) - 0.5*a(u[j,k-1])**2*dx**-1*dt*(u[0,k-1]-2*u[j,k-1]+u[j-1,k-1])
             else:
-                r[j] = (u[j,k-1]-u[j-1,k-1])/(u[j+1,k-1]-u[j,k-1])
-                F_lax[j] = 0.5*(flux(u[j+1,k-1]) - 2*- flux(u[j,k-1]) + flux(u[j-1,k-1])) - 0.5*a(u[j,k-1])**2*dx**-1*dt*(u[j+1,k-1]-2*u[j,k-1]+u[j-1,k-1])
-                F_bea[j] = 0.5*(3*flux(u[j,k-1])-4*flux(u[j-1,k-1])+flux(u[j-2,k-1])) - 0.5*a(u[j,k-1])**2*dx**-1*dt*(u[j,k-1]-2*u[j-1,k-1]+u[j-2,k-1])
-            eta = (np.abs(r)-1)/(np.abs(r)+1)
-            u[:,k] = u[:,k-1] - dx**-1*dt*((eta+1)*F_lax+(eta-1)*F_bea)/2
+                r[j] = (u[j,k-1]-u[j-1,k-1])/(u[j+1,k-1]-u[j,k-1] + epsilon)
+                F_lax[j] = 0.5*(flux(u[j+1,k-1]) - flux(u[j-1,k-1])) - 0.5*a(u[j,k-1])**2*dx**-1*dt*(u[j+1,k-1]-2*u[j,k-1]+u[j-1,k-1])
+            F_bea[j] = 0.5*(3*flux(u[j,k-1]) - 4*flux(u[j-1,k-1]) + flux(u[j-2,k-1])) - 0.5*a(u[j,k-1])**2*dx**-1*dt*(u[j,k-1]-2*u[j-1,k-1]+u[j-2,k-1])
+        eta = (np.abs(r) + r)/(np.abs(r) + 1)
+        u[:,k] = u[:,k-1] - dx**-1*dt*(F_lax+0.5*eta*(F_bea-F_lax))
     return u
+
+
 
 """# Test 1 :"""
 
@@ -112,8 +113,9 @@ class Test3(TestHCL):
         def flux(x):
             third=1.0/3.0
             return 0.5*(1+square((x+third)*np.pi,duty=third))
-        super().__init__(tag=3, tFinal=(4,40), nx=600, flux=lambda x:x, u0=lambda x:flux(x), a=lambda x:1)
+        super().__init__(tag=3, tFinal = 4, nx=600, flux=lambda x:x, u0=lambda x:flux(x), a=lambda x:1)
         self.uFinal=self.u0(self.x)
+t3=Test3()
 
 t3=Test3()
 
@@ -141,13 +143,13 @@ class Test5(TestHCL):
 t5=Test5()
 
 tests = [t1,t2,t3,t4,t5]
-N_time = 5
+N_time = 100
 
 for test in tests:
     u0 = np.array(test.u0(np.linspace(-1,+1,test.nx)))
     x = test.x
     u = Van_Leer_integrator(u0,test.dx,test.dt,test.flux,test.a,N_time)
-    plt.plot(x,u[:,2],'r-',label = 'final u')    
+    plt.plot(x,u[:,-1],'r-',label = 'final u')    
     plt.plot(x,u0,'k',label = 'initial u')
     plt.legend()
 
